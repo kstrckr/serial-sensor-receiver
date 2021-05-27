@@ -1,7 +1,10 @@
 use std::time::Duration;
-use std::io::{self, Write};
+use std::io::prelude::*;
+use std::io::{self};
 
-fn follow_stuffed_bytes(next_value: usize, frame: &[u8; 14]) -> bool {
+use circle_buff::CircleBuffer;
+
+fn follow_stuffed_bytes(next_value: usize, frame: &[u8]) -> bool {
     if next_value > frame.len() || next_value == 0 || frame[frame.len() - 1] != 0 {
         false
     } else {
@@ -15,42 +18,41 @@ fn follow_stuffed_bytes(next_value: usize, frame: &[u8; 14]) -> bool {
     }
 }
 
-fn cobs_frame_is_valid(frame: [u8; 14]) -> bool {
+fn cobs_frame_is_valid(frame: &[u8]) -> bool {
     follow_stuffed_bytes(frame[0] as usize, &frame)
 }
 
-
 #[test]
 fn valid_cobs_frame() {
-    let valid_frame = [1, 1, 3, 10, 10, 1, 3, 11, 11, 1, 3, 12, 12, 0];
-    assert_eq!(cobs_frame_is_valid(valid_frame), true);
+    let valid_frame = [1, 1, 3, 10, 10, 1, 3, 11, 11, 1, 3, 12, 12, 1, 1, 0];
+    assert_eq!(cobs_frame_is_valid(&valid_frame), true);
 }
 
 #[test]
 fn invalid_cobs_frame_1() {
-    let invalid_frame = [173, 66, 4, 128, 81, 195, 0, 185, 66, 4, 128, 69, 195, 0];
-    assert_eq!(cobs_frame_is_valid(invalid_frame), false);
+    let invalid_frame = [173, 66, 4, 128, 81, 195, 0, 185, 66, 4, 128, 69, 195, 1, 1, 0];
+    assert_eq!(cobs_frame_is_valid(&invalid_frame), false);
 }
 
 #[test]
 fn invalid_cobs_frame_2() {
-    let invalid_frame = [0, 66, 4, 128, 81, 195, 0, 185, 66, 4, 128, 69, 195, 0];
-    assert_eq!(cobs_frame_is_valid(invalid_frame), false);
+    let invalid_frame = [0, 66, 4, 128, 81, 195, 0, 185, 66, 4, 128, 69, 195, 1, 1, 0];
+    assert_eq!(cobs_frame_is_valid(&invalid_frame), false);
 }
 
 #[test]
 fn invalid_cobs_frame_3() {
-    let invalid_frame = [173, 66, 4, 128, 81, 195, 0, 185, 66, 4, 128, 69, 195, 99];
-    assert_eq!(cobs_frame_is_valid(invalid_frame), false);
+    let invalid_frame = [173, 66, 4, 128, 81, 195, 0, 185, 66, 4, 128, 69, 195, 1, 1, 99];
+    assert_eq!(cobs_frame_is_valid(&invalid_frame), false);
 }
 
-fn deserialize_cobs_frame (frame: [u8; 14]) -> Result<[u8; 12], & 'static str> {
+fn deserialize_cobs_frame (frame: &[u8]) -> Result<[u8; 14], &[u8]> {
     if cobs_frame_is_valid(frame) {
         if frame[0] == frame.len() as u8 + 1 {
-            Ok([frame[1], frame[2], frame[3], frame[4], frame[5], frame[6], frame[7], frame[8], frame[9], frame[11], frame[12], frame[13]])
+            Ok([frame[1], frame[2], frame[3], frame[4], frame[5], frame[6], frame[7], frame[8], frame[9], frame[11], frame[12], frame[13], frame[14], frame[15]])
         } else {
             let mut indeces_to_zero = Vec::new();
-            let mut parsed_frame = [0; 12];
+            let mut parsed_frame = [0; 14];
             let mut next_index = frame[0] as usize;
             loop {
                 if frame[next_index] == 0 {
@@ -70,18 +72,18 @@ fn deserialize_cobs_frame (frame: [u8; 14]) -> Result<[u8; 12], & 'static str> {
             Ok(parsed_frame)
         }
     } else {
-        Err("Invalid frame")
+        Err(frame)
     }
 }
 
+
 #[test]
 fn convert_valid_frame() {
-    let valid_frame = [1, 1, 3, 10, 10, 1, 3, 11, 11, 1, 3, 12, 12, 0];
-    let data = deserialize_cobs_frame(valid_frame).expect("failed unwrapping");
+    let valid_frame = [1, 1, 3, 10, 10, 1, 3, 11, 11, 1, 5, 12, 12, 1, 1, 0];
+    let data = deserialize_cobs_frame(&valid_frame).expect("failed unwrapping");
     println!("{:?}", data);
-    assert_eq!(data, [0, 0, 10, 10, 0, 0, 11, 11, 0, 0, 12, 12]);
+    assert_eq!(data, [0, 0, 10, 10, 0, 0, 11, 11, 0, 0, 12, 12, 1, 1]);
 }
-
 
 fn main() {
     let ports = serialport::available_ports().expect("No ports found!");
@@ -96,34 +98,57 @@ fn main() {
     .timeout(Duration::from_millis(10))
     .open();
 
+
+    let mut count = 0;
+    let mut error = 0;
     match port {
         Ok(mut port) => {
-            // let mut serial_buf: Vec<u8> = vec![0; 4];
-            let mut serial_buf: [u8; 14] = [0; 14];
+            // let mut serial_buf: [u8; 32] = [0; 32];
             println!("Receiving data on {} at {} baud:", &port_name, &baud_rate);
-            let mut cycle = 0;
-            loop {
-                match port.read(& mut serial_buf) {
-                    Ok(t) => {
-                        if cobs_frame_is_valid(serial_buf) && t == 14 {
-                            let data: [u8; 12] = deserialize_cobs_frame(serial_buf).expect("Fail");
-                            let x = [data[0], data[1], data[2], data[3]];
-                            let y = [data[4], data[5], data[6], data[7]];
-                            let z = [data[8], data[9], data[10], data[11]];
 
-                            let x_f32: f32 = f32::from_le_bytes(x);
-                            let y_f32: f32 = f32::from_le_bytes(y);
-                            let z_f32: f32 = f32::from_le_bytes(z);
-                            // println!("bytes: {:?}, {:?}, {:?}", x, y, z);
-                            println!("{}:{} value: {}, {}, {}", cycle, t, x_f32, y_f32, z_f32);
-                            cycle += 1;
-                            // println!("bytes: {:?}", data);
+            let cb: CircleBuffer<u32> = CircleBuffer::new(1000);
+            println!("{:?}", cb.buffer);
+            loop {
+                let mut serial_buf: Vec<u8> = vec![0; 16];
+
+                match port.read(&mut serial_buf) {
+                    Ok(t) => {
+                        // if error > 0 || count > 0 { println!("{:?} : {}/{}", serial_buf, count, error); }
+
+                        if t == 16 {
+                            // println!("{} {:?}", count, serial_buf);
+
+                            // let frame_1 = &serial_buf[0..16];
+
+
+                            let data = deserialize_cobs_frame(&serial_buf[..]);
+                            match data {
+                                Ok(d) => {
+                                    count += 1;
+
+                                    let x = [d[0], d[1], d[2], d[3]];
+                                    let y = [d[4], d[5], d[6], d[7]];
+                                    let z = [d[8], d[9], d[10], d[11]];
+                                    let counter = [d[12], d[13]];
+
+                                    let x_f32: f32 = f32::from_le_bytes(x);
+                                    let y_f32: f32 = f32::from_le_bytes(y);
+                                    let z_f32: f32 = f32::from_le_bytes(z);
+                                    let counter_u16 = u16::from_le_bytes(counter);
+                                    println!("{} value: {}, {}, {}, {}", count, x_f32, y_f32, z_f32, counter_u16);
+                                }
+                                Err(e) => {
+                                    error += 1;
+                                    println!("{:?} - error", e);
+                                    port.clear(serialport::ClearBuffer::Input).expect("Failed to flush");
+                                }
+                            }
                         }
-                        // println!("value: {}", x_f32);
                     },
                     Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
                     Err(e) => eprintln!("{:?}", e),
                 }
+                // println!("{}/{}", count, error);
             }
         }
         Err(e) => {
@@ -131,6 +156,4 @@ fn main() {
             ::std::process::exit(1);
         }
     }
-
-    // println!("{:?}", serial_buf);
 }
