@@ -106,44 +106,53 @@ fn main() {
             // let mut serial_buf: [u8; 32] = [0; 32];
             println!("Receiving data on {} at {} baud:", &port_name, &baud_rate);
 
-            let cb: CircleBuffer<u32> = CircleBuffer::new(1000);
-            println!("{:?}", cb.buffer);
+            let mut cb: CircleBuffer<u8> = CircleBuffer::new();
             loop {
-                let mut serial_buf: Vec<u8> = vec![0; 16];
+                let mut serial_buf: Vec<u8> = vec![0; 32];
 
                 match port.read(&mut serial_buf) {
                     Ok(t) => {
                         // if error > 0 || count > 0 { println!("{:?} : {}/{}", serial_buf, count, error); }
 
-                        if t == 16 {
                             // println!("{} {:?}", count, serial_buf);
 
                             // let frame_1 = &serial_buf[0..16];
 
+                        cb.write(&serial_buf[0..t]);
+                        // println!("{:?}", cb.buffer);
+                        let frame = cb.read_cobs_frame();
 
-                            let data = deserialize_cobs_frame(&serial_buf[..]);
-                            match data {
-                                Ok(d) => {
-                                    count += 1;
+                        match frame {
+                            Some(x) => {
+                                let data = deserialize_cobs_frame(&x);
+                                match data {
+                                    Ok(d) => {
+                                        count += 1;
 
-                                    let x = [d[0], d[1], d[2], d[3]];
-                                    let y = [d[4], d[5], d[6], d[7]];
-                                    let z = [d[8], d[9], d[10], d[11]];
-                                    let counter = [d[12], d[13]];
+                                        let x = [d[0], d[1], d[2], d[3]];
+                                        let y = [d[4], d[5], d[6], d[7]];
+                                        let z = [d[8], d[9], d[10], d[11]];
+                                        let counter = [d[12], d[13]];
 
-                                    let x_f32: f32 = f32::from_le_bytes(x);
-                                    let y_f32: f32 = f32::from_le_bytes(y);
-                                    let z_f32: f32 = f32::from_le_bytes(z);
-                                    let counter_u16 = u16::from_le_bytes(counter);
-                                    println!("{} value: {}, {}, {}, {}", count, x_f32, y_f32, z_f32, counter_u16);
-                                }
-                                Err(e) => {
-                                    error += 1;
-                                    println!("{:?} - error", e);
-                                    port.clear(serialport::ClearBuffer::Input).expect("Failed to flush");
+                                        let x_f32: f32 = f32::from_le_bytes(x);
+                                        let y_f32: f32 = f32::from_le_bytes(y);
+                                        let z_f32: f32 = f32::from_le_bytes(z);
+                                        let counter_u16 = u16::from_le_bytes(counter);
+                                        println!("{} value: {}, {}, {}, {}", count, x_f32, y_f32, z_f32, counter_u16);
+                                    }
+                                    Err(e) => {
+                                        error += 1;
+                                        println!("{:?} - error", e);
+                                        port.clear(serialport::ClearBuffer::Input).expect("Failed to flush");
+                                    }
                                 }
                             }
+                            None => {
+                                println!("waiting...")
+                            }
                         }
+
+
                     },
                     Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
                     Err(e) => eprintln!("{:?}", e),

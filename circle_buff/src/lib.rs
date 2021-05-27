@@ -1,57 +1,67 @@
+const SIZE: usize = 10000;
 
 pub struct CircleBuffer<T> {
     read_index: IndexCounter,
     write_index: IndexCounter,
-    pub buffer: [T; 1000],
+    buffered_values: u32,
+    pub buffer: [T; SIZE],
 }
 
-impl CircleBuffer<u32> {
-    pub fn new(size: usize) -> Self {
-        println!("{}", size);
-        let cb: CircleBuffer<u32> = CircleBuffer {
+impl CircleBuffer<u8> {
+    pub fn new() -> Self {
+        let cb: CircleBuffer<u8> = CircleBuffer {
             read_index: IndexCounter {
                 index: 0,
-                max_size: size,
+                max_size: SIZE,
             },
             write_index: IndexCounter {
                 index: 0,
-                max_size: size,
+                max_size: SIZE,
             },
-            buffer: [0; 1000],
+            buffer: [0; SIZE],
+            buffered_values: 0,
         };
         cb
     }
 
-    fn write(&mut self, data: &[u32]) -> usize {
+    pub fn write(&mut self, data: &[u8]) -> usize {
         let mut iter = data.into_iter();
-        println!("{:?}", iter.len());
         while let Some(n) = iter.next() {
-            println!("{}", self.write_index.index);
             self.buffer[self.write_index.index] = *n;
             self.write_index.increment();
+            self.buffered_values += 1;
         }
         self.write_index.index
     }
 
-    fn read(&mut self) -> u32 {
+    fn read(&mut self) -> u8 {
         let val = self.buffer[self.read_index.index];
+        self.buffer[self.read_index.index] = 0;
         self.read_index.increment();
+        self.buffered_values -= 1;
         val
     }
 
-    fn read_cobs_frame(&mut self) -> Vec<u32> {
-        let mut frame: Vec<u32> = Vec::new();
-        let mut reading = true;
-        while reading {
-            let byte = self.read();
-            frame.push(byte);
-            if byte == 0 {
-                reading = false;
+    pub fn read_cobs_frame(&mut self) -> Option<Vec<u8>> {
+        if self.buffered_values < 16 {
+            None
+        } else {
+            let mut frame: Vec<u8> = Vec::new();
+            let mut reading = true;
+            while reading {
+                let byte = self.read();
+                frame.push(byte);
+                if byte == 0 {
+                    reading = false;
+                }
+            }
+            if frame.len() == 16 {
+                Some(frame)
+            } else {
+                None
             }
         }
-        frame
     }
-
 }
 
 struct IndexCounter {
@@ -92,21 +102,21 @@ mod tests {
 
     #[test]
     fn circle_buff_constructor() {
-        let mut cb: CircleBuffer<u32> = CircleBuffer::new(10);
+        let mut cb: CircleBuffer<u8> = CircleBuffer::new();
         let i = cb.write(&[0]);
         assert_eq!(i, 1)
     }
 
     #[test]
     fn circle_buff_write() {
-        let mut cb: CircleBuffer<u32> = CircleBuffer::new(10);
+        let mut cb: CircleBuffer<u8> = CircleBuffer::new();
         let i = cb.write(&[0, 0, 0]);
         assert_eq!(cb.write_index.index, 3)
     }
 
     #[test]
     fn circle_buff_read() {
-        let mut cb: CircleBuffer<u32> = CircleBuffer::new(10);
+        let mut cb: CircleBuffer<u8> = CircleBuffer::new();
         let i = cb.write(&[0, 1, 2, 3]);
         assert_eq!(cb.read_index.index, 0);
         let first_read = cb.read();
@@ -119,9 +129,9 @@ mod tests {
 
     #[test]
     fn circle_buff_read_cobs() {
-        let mut cb: CircleBuffer<u32> = CircleBuffer::new(10);
-        let i = cb.write(&[1,2,3,4,5,0,1]);
-        let frame = cb.read_cobs_frame();
-        assert_eq!(frame, [1, 2, 3, 4, 5, 0])
+        let mut cb: CircleBuffer<u8> = CircleBuffer::new();
+        let i = cb.write(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0]);
+        let frame = cb.read_cobs_frame().unwrap();
+        assert_eq!(frame, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0])
     }
 }
