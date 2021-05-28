@@ -46,13 +46,13 @@ fn invalid_cobs_frame_3() {
     assert_eq!(cobs_frame_is_valid(&invalid_frame), false);
 }
 
-fn deserialize_cobs_frame (frame: &[u8]) -> Result<[u8; 14], &[u8]> {
+fn deserialize_cobs_frame (frame: &[u8]) -> Result<[u8; 16], &[u8]> {
     if cobs_frame_is_valid(frame) {
         if frame[0] == frame.len() as u8 + 1 {
-            Ok([frame[1], frame[2], frame[3], frame[4], frame[5], frame[6], frame[7], frame[8], frame[9], frame[11], frame[12], frame[13], frame[14], frame[15]])
+            Ok([frame[1], frame[2], frame[3], frame[4], frame[5], frame[6], frame[7], frame[8], frame[9], frame[11], frame[12], frame[13], frame[14], frame[15], frame[16], frame[17]])
         } else {
             let mut indeces_to_zero = Vec::new();
-            let mut parsed_frame = [0; 14];
+            let mut parsed_frame = [0; 16];
             let mut next_index = frame[0] as usize;
             loop {
                 if frame[next_index] == 0 {
@@ -85,6 +85,19 @@ fn convert_valid_frame() {
     assert_eq!(data, [0, 0, 10, 10, 0, 0, 11, 11, 0, 0, 12, 12, 1, 1]);
 }
 
+fn format_data_to_text(d: [u8; 16]) -> (f32, f32, f32, u32) {
+    let x = [d[0], d[1], d[2], d[3]];
+    let y = [d[4], d[5], d[6], d[7]];
+    let z = [d[8], d[9], d[10], d[11]];
+    let counter = [d[12], d[13], d[14], d[15]];
+
+    let x_f32: f32 = f32::from_le_bytes(x);
+    let y_f32: f32 = f32::from_le_bytes(y);
+    let z_f32: f32 = f32::from_le_bytes(z);
+    let counter_u32 = u32::from_le_bytes(counter);
+    (x_f32, y_f32, z_f32, counter_u32)
+}
+
 fn main() {
     let ports = serialport::available_ports().expect("No ports found!");
     for p in ports {
@@ -100,26 +113,20 @@ fn main() {
 
 
     let mut count = 0;
-    let mut error = 0;
     match port {
         Ok(mut port) => {
-            // let mut serial_buf: [u8; 32] = [0; 32];
             println!("Receiving data on {} at {} baud:", &port_name, &baud_rate);
 
             let mut cb: CircleBuffer<u8> = CircleBuffer::new();
+            println!("\x1b[2J");
+            let mut serial_buf: [u8; 18] = [0; 18];
             loop {
-                let mut serial_buf: Vec<u8> = vec![0; 32];
+                // let mut serial_buf: Vec<u8> = vec![0; 18];
 
                 match port.read(&mut serial_buf) {
                     Ok(t) => {
-                        // if error > 0 || count > 0 { println!("{:?} : {}/{}", serial_buf, count, error); }
-
-                            // println!("{} {:?}", count, serial_buf);
-
-                            // let frame_1 = &serial_buf[0..16];
-
                         cb.write(&serial_buf[0..t]);
-                        // println!("{:?}", cb.buffer);
+                        let p = cb.percent_utilized();
                         let frame = cb.read_cobs_frame();
 
                         match frame {
@@ -128,27 +135,17 @@ fn main() {
                                 match data {
                                     Ok(d) => {
                                         count += 1;
-
-                                        let x = [d[0], d[1], d[2], d[3]];
-                                        let y = [d[4], d[5], d[6], d[7]];
-                                        let z = [d[8], d[9], d[10], d[11]];
-                                        let counter = [d[12], d[13]];
-
-                                        let x_f32: f32 = f32::from_le_bytes(x);
-                                        let y_f32: f32 = f32::from_le_bytes(y);
-                                        let z_f32: f32 = f32::from_le_bytes(z);
-                                        let counter_u16 = u16::from_le_bytes(counter);
-                                        println!("{} value: {}, {}, {}, {}", count, x_f32, y_f32, z_f32, counter_u16);
+                                        let (x, y, z, counter) = format_data_to_text(d);
+                                        println!("\x1b[2J\x1b[H{}% - {}\nvalue: {}, {}, {}, {}", p, count, x, y, z, counter);
                                     }
                                     Err(e) => {
-                                        error += 1;
                                         println!("{:?} - error", e);
-                                        port.clear(serialport::ClearBuffer::Input).expect("Failed to flush");
+                                        // port.clear(serialport::ClearBuffer::Input).expect("Failed to flush");
                                     }
                                 }
                             }
                             None => {
-                                println!("waiting...")
+                                // println!("waiting...")
                             }
                         }
 

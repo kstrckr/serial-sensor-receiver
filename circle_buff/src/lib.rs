@@ -24,6 +24,10 @@ impl CircleBuffer<u8> {
         cb
     }
 
+    pub fn percent_utilized(&self) -> f32 {
+        (self.buffered_values as f32 /SIZE as f32) * 100.0
+    }
+
     pub fn write(&mut self, data: &[u8]) -> usize {
         let mut iter = data.into_iter();
         while let Some(n) = iter.next() {
@@ -43,7 +47,7 @@ impl CircleBuffer<u8> {
     }
 
     pub fn read_cobs_frame(&mut self) -> Option<Vec<u8>> {
-        if self.buffered_values < 16 {
+        if self.buffered_values < 18 {
             None
         } else {
             let mut frame: Vec<u8> = Vec::new();
@@ -55,7 +59,7 @@ impl CircleBuffer<u8> {
                     reading = false;
                 }
             }
-            if frame.len() == 16 {
+            if frame.len() == 18 {
                 Some(frame)
             } else {
                 None
