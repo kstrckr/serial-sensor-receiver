@@ -104,7 +104,7 @@ fn main() {
         println!("{}", p.port_name);
     }
 
-    let port_name = "COM4";
+    let port_name = "COM5";
     let baud_rate = 115_200;
 
     let port = serialport::new(port_name, baud_rate)
@@ -120,6 +120,11 @@ fn main() {
             let mut cb: CircleBuffer<u8> = CircleBuffer::new();
             println!("\x1b[2J");
             let mut serial_buf: [u8; 18] = [0; 18];
+
+            let mut x_sign = '-';
+            let mut y_sign = '-';
+            let mut z_sign = '-';
+
             loop {
                 // let mut serial_buf: Vec<u8> = vec![0; 18];
 
@@ -135,8 +140,26 @@ fn main() {
                                 match data {
                                     Ok(d) => {
                                         count += 1;
-                                        let (x, y, z, counter) = format_data_to_text(d);
-                                        println!("\x1b[2J\x1b[H{}% - {}\nvalue: {}, {}, {}, {}", p, count, x, y, z, counter);
+                                        let (mut x, mut y, mut z, counter) = format_data_to_text(d);
+                                        if x >= 0.0 {
+                                            x_sign = '+';
+                                        } else {
+                                            x_sign = '-';
+                                            x = x.abs();
+                                        }
+                                        if y >= 0.0 {
+                                            y_sign = '+';
+                                        } else {
+                                            y_sign = '-';
+                                            y = y.abs();
+                                        }
+                                        if z >= 0.0 {
+                                            z_sign = '+';
+                                        } else {
+                                            z_sign = '-';
+                                            z = z.abs();
+                                        }
+                                        println!("\x1b[2J\x1b[Hbuffer_utilization: {}%\nlocal_count/remote_count: {}/{}\nx: {}{}\ny: {}{}\nz: {}{}", p, count, counter, x_sign, x as i32, y_sign, y as i32, z_sign, z as i32);
                                     }
                                     Err(e) => {
                                         println!("{:?} - error", e);
